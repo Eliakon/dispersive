@@ -2891,17 +2891,16 @@ var Action = function () {
   }, {
     key: 'callHandler',
     value: function callHandler() {
-      var _before,
-          _handler,
+      var _handler,
           _this3 = this;
 
-      for (var _len = arguments.length, argv = Array(_len), _key = 0; _key < _len; _key++) {
-        argv[_key] = arguments[_key];
+      for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
+        args[_key] = arguments[_key];
       }
 
-      if (!!this.before) (_before = this.before).trigger.apply(_before, argv);
+      if (!!this.before) this.before.trigger({ args: args });
 
-      var res = this.handler === null ? null : (_handler = this.handler).call.apply(_handler, [this].concat(argv));
+      var res = this.handler === null ? null : (_handler = this.handler).call.apply(_handler, [this].concat(args));
       var promise = res instanceof Promise ? res : new Promise(function (resolve) {
         return resolve(res);
       });
@@ -3107,7 +3106,7 @@ var Funnel = function () {
   _createClass(Funnel, [{
     key: 'same',
     value: function same(emitted, stacked) {
-      return emitted.emitter === stacked.emitter && emitted.name === stacked.name && stacked.data.sources.has(emitted.data.source);
+      return emitted.emitter === stacked.emitter && emitted.name === stacked.name && stacked.data.__sources__.has(emitted.data.__source__);
     }
   }, {
     key: 'addSource',
@@ -3115,7 +3114,7 @@ var Funnel = function () {
       if (emitted.emitter !== stacked.emitter) return false;
       if (emitted.name !== stacked.name) return false;
 
-      if ('source' in emitted.data) stacked.data.sources.add(emitted.data.source);
+      if ('__source__' in emitted.data) stacked.data.__sources__.add(emitted.data.__source__);
 
       return true;
     }
@@ -3164,11 +3163,11 @@ var Funnel = function () {
     value: function add(event) {
       if (this.mergeToStack(event)) return;
 
-      event.data.sources = new Set();
+      event.data.__sources__ = new Set();
 
-      if ('source' in event.data) {
-        event.data.sources.add(event.data.source);
-        delete event.data.source;
+      if ('__source__' in event.data) {
+        event.data.__sources__.add(event.data.__source__);
+        delete event.data.__source__;
       }
 
       this.stack.push(event);
@@ -3184,7 +3183,7 @@ var Funnel = function () {
         for (var _iterator2 = this.stack[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
           var event = _step2.value;
 
-          event.data.sources = Array.from(event.data.sources);
+          event.data.__sources__ = Array.from(event.data.__sources__);
           event.emitter.emit(event.name, event.data);
         }
       } catch (err) {
@@ -3272,6 +3271,7 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 var QuerySet = require('./queryset');
 var EventEmitter = require('./emitter');
 var hat = require('hat');
+var clone = require('clone');
 
 var Index = function () {
   function Index(name) {
@@ -3774,6 +3774,15 @@ var ObjectManager = function (_QuerySet) {
       return model;
     }
   }, {
+    key: 'on',
+    value: function on(name, listener) {
+      var ctx = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : null;
+
+      return this.emitter.addListener(name, function (data) {
+        if (!(data && data.__existingSource__)) listener.call(ctx, data);
+      });
+    }
+  }, {
     key: 'create',
     value: function create(data) {
       var opts = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : { emitChange: true };
@@ -3855,19 +3864,30 @@ var ObjectManager = function (_QuerySet) {
       this.index.id.add(values);
       this._syncLinks(this.index.id.get(model.id));
 
-      if (opts.emitChange) this.emitChange({ source: values });
+      if (opts.emitChange) this.emitChange({ __source__: { values: values } });
     }
   }, {
     key: '_syncExisting',
     value: function _syncExisting(model) {
-      var schemaValues = null;
+      var opts = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : { emitChange: true };
+
+      var event = {};
+      var prevalues = clone(this.index.id.get(model.id));
+      var values = null;
 
       if (!this.index.id.get(model.id)) throw new ObjectManager.ModelNotSyncable();
 
-      schemaValues = model.schemaValues();
+      values = model.schemaValues();
 
-      Object.assign(this.index.id.get(model.id), schemaValues);
-      this._syncLinks(schemaValues);
+      Object.assign(this.index.id.get(model.id), values);
+      this._syncLinks(values);
+
+      if (opts.emitChange) {
+        event.__source__ = { prevalues: prevalues, values: values };
+        event.__existingSource__ = true;
+        model.emitChange(event);
+        this.emitChange(event);
+      }
     }
   }, {
     key: 'isValidId',
@@ -3879,7 +3899,7 @@ var ObjectManager = function (_QuerySet) {
     value: function sync(model) {
       var opts = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : { emitChange: true };
 
-      if (!!model.id) return this._syncExisting(model);
+      if (!!model.id) return this._syncExisting(model, opts);
 
       this._syncNew(model, opts);
     }
@@ -3898,7 +3918,7 @@ var ObjectManager = function (_QuerySet) {
       this.index.id['delete'](values);
       delete this.emitters[model.id];
 
-      if (opts.emitChange) this.emitChange({ source: values });
+      if (opts.emitChange) this.emitChange({ __source__: { values: values } });
     }
   }]);
 
@@ -3924,7 +3944,7 @@ ObjectManager.NoSchema = function () {
 }();
 
 module.exports = ObjectManager;
-},{"./emitter":11,"./queryset":16,"hat":31}],14:[function(require,module,exports){
+},{"./emitter":11,"./queryset":16,"clone":20,"hat":31}],14:[function(require,module,exports){
 'use strict';
 
 var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
@@ -4045,9 +4065,6 @@ var Model = function (_EventEmitter$Emittab) {
       var opts = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : { emitChange: true };
 
       this.constructor.objects.sync(this, opts);
-
-      if (opts.emitChange) this.emitChange();
-
       return this;
     }
   }, {
@@ -4327,10 +4344,8 @@ var QuerySet = function (_EventEmitter) {
 
       var ctx = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : null;
 
-      if (this.manager === this) return _get(QuerySet.prototype.__proto__ || Object.getPrototypeOf(QuerySet.prototype), 'on', this).call(this, name, listener, ctx);
-
-      this.manager.on(name, function (data) {
-        var targeted = 'source' in data && _this4.validate(data.source) || 'sources' in data && _this4.validateAny(data.sources);
+      return this.manager.emitter.addListener(name, function (data) {
+        var targeted = '__source__' in data && _this4.validate(data.__source__) || '__sources__' in data && _this4.validateAny(data.__sources__);
 
         if (targeted) listener.call(ctx, data);
       });
@@ -4523,14 +4538,16 @@ var QuerySet = function (_EventEmitter) {
     }
   }, {
     key: 'validate',
-    value: function validate(values) {
-      if (!!this.predicate && !this.predicate(values)) return false;
+    value: function validate(source) {
+      if (!!this.predicate && !this.predicate(source.values)) {
+        return !!source.prevalues && this.predicate(source.prevalues);
+      }
 
-      return !!this.parent ? this.parent.validate(values) : true;
+      return !!this.parent ? this.parent.validate(source) : true;
     }
   }, {
     key: 'validateAny',
-    value: function validateAny(valuesArray) {
+    value: function validateAny(sourcesArray) {
       var validate = false;
 
       var _iteratorNormalCompletion4 = true;
@@ -4538,10 +4555,10 @@ var QuerySet = function (_EventEmitter) {
       var _iteratorError4 = undefined;
 
       try {
-        for (var _iterator4 = valuesArray[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
-          var values = _step4.value;
+        for (var _iterator4 = sourcesArray[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
+          var source = _step4.value;
 
-          validate = this.validate(values);
+          validate = this.validate(source);
           if (validate) break;
         }
       } catch (err) {
