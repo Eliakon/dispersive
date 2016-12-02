@@ -18,8 +18,6 @@ describe('QuerySet', () => {
     store.register('teammates', {model: Teammate, schema});
 
     beforeEach(() => {
-      Dispersive.QuerySet.recompute = false;
-
       Teammate.objects.delete();
       Teammate.objects.create({name: 'jane', age: 40, job: 'developer'});
       Teammate.objects.create({name: 'joe', age: 30, job: 'developer'});
@@ -28,39 +26,43 @@ describe('QuerySet', () => {
     });
 
     it('should filter objects', () => {
-      assert.deepEqual([
-        {name: 'jane', age: 40, job: 'developer'},
-        {name: 'josh', age: 40, job: 'designer'},
-        {name: 'betty', age: 40, job: 'developer'},
-      ], Teammate.objects.filter({age: 40}).values({exclude: ['id']}));
+      const [names] =  Teammate.objects.filter({age: 40}).valuesOf('name');
+      assert.deepEqual(names, ['jane', 'josh', 'betty']);
     });
 
     it('should filter objects using predicate', () => {
-      assert.deepEqual([
+      const [values] = Teammate.objects.filter(teammate => teammate.age === 40).values(opts)
+      assert.deepEqual(values, [
         {name: 'jane', age: 40, job: 'developer'},
         {name: 'josh', age: 40, job: 'designer'},
         {name: 'betty', age: 40, job: 'developer'},
-      ], Teammate.objects.filter(teammate => teammate.age === 40).values({exclude: ['id']}));
+      ]);
     });
 
     it('should exclude objects', () => {
-      assert.deepEqual([
+      const [values] = Teammate.objects.exclude({age: 40}).values(opts);
+
+      assert.deepEqual(values, [
         {name: 'joe', age: 30, job: 'developer'},
-      ], Teammate.objects.exclude({age: 40}).values({exclude: ['id']}));
+      ]);
     });
 
     it('should exclude objects using predicate', () => {
-      assert.deepEqual([
+      const [values] = Teammate.objects.exclude(teammate => teammate.age === 40).values(opts);
+
+      assert.deepEqual(values, [
         {name: 'joe', age: 30, job: 'developer'},
-      ], Teammate.objects.exclude(teammate => teammate.age === 40).values({exclude: ['id']}));
+      ]);
     });
 
     it('should get only first object', () => {
-      assert.deepEqual({name: 'jane', age: 40, job: 'developer'}, Teammate.objects.first().values({exclude: ['id']}));
+      const [first] = Teammate.objects.first();
+      assert.deepEqual(values, {name: 'jane', age: 40, job: 'developer'});
     });
 
     it('should get only last object', () => {
-      assert.deepEqual({name: 'betty', age: 40, job: 'developer'}, Teammate.objects.last().values({exclude: ['id']}));
+      const [values] = Teammate.objects.last().values(opts)
+      assert.deepEqual(values, {name: 'betty', age: 40, job: 'developer'});
     });
 
     it('should get an object when threre\'s only one', () => {
@@ -473,11 +475,11 @@ describe('QuerySet', () => {
 
       const first = store.stuff.orderBy('name').first();
 
-      assert.equal(first.name, 'zorro');
+      assert.equal(first.result.name, 'zorro');
 
       store.stuff.create({name: 'albert'});
 
-      assert.equal(first.__qpack__.recompute().name, 'albert');
+      assert.equal(first.recompute().result.name, 'albert');
     });
 
     it('should recompute "last"', () => {
@@ -485,11 +487,13 @@ describe('QuerySet', () => {
 
       const last = store.stuff.orderBy('name').last();
 
-      assert.equal(last.name, 'albert');
+      console.log(last)
+
+      assert.equal(last.result.name, 'albert');
 
       store.stuff.create({name: 'zorro'});
 
-      assert.equal(last.__qpack__.recompute().name, 'zorro');
+      assert.equal(last.recompute().result.name, 'zorro');
     });
 
     it('should recompute "values"', () => {
@@ -497,8 +501,8 @@ describe('QuerySet', () => {
       
       const values = store.stuff.values({include: ['name']});
 
-      assert.deepEqual('albert', values[0].name);
-      assert.deepEqual('albert', values.__qpack__.recompute()[0].name);
+      assert.deepEqual('albert', values.result[0].name);
+      assert.deepEqual('albert', values.recompute().result[0].name);
     });
 
     it('should recompute "all"', () => {
@@ -506,8 +510,8 @@ describe('QuerySet', () => {
       
       const all = store.stuff.all();
 
-      assert.deepEqual('albert', all[0].name);
-      assert.deepEqual('albert', all.__qpack__.recompute()[0].name);
+      assert.deepEqual('albert', all.result[0].name);
+      assert.deepEqual('albert', all.recompute().result[0].name);
     });
 
     it('should recompute "at"', () => {
@@ -516,11 +520,11 @@ describe('QuerySet', () => {
 
       const at1 = store.stuff.orderBy('name').at(1);
 
-      assert.equal(at1.name, 'zorro');
+      assert.equal(at1.result.name, 'zorro');
 
       store.stuff.create({name: 'albert'});
 
-      assert.equal(at1.__qpack__.recompute().name, 'albert');
+      assert.equal(at1.recompute().result.name, 'albert');
 
     });
 
@@ -534,12 +538,12 @@ describe('QuerySet', () => {
 
       const range = store.stuff.orderBy('name').range(0, 4, 2);
 
-      assert.deepEqual(range.map(stuff => stuff.name), ['alan', 'bill']);
+      assert.deepEqual(range.result.map(stuff => stuff.name), ['alan', 'bill']);
 
       store.stuff.create({name: 'albert'});
       store.stuff.create({name: 'albert2'});
 
-      assert.deepEqual(range.__qpack__.recompute().map(stuff => stuff.name), ['alan', 'albert']);
+      assert.deepEqual(range.recompute().result.map(stuff => stuff.name), ['alan', 'albert']);
     });
 
   });

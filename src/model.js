@@ -44,19 +44,6 @@ class Model extends EventEmitter.Emittable {
     return clone(pick(this, ...[...this.schema.names()]));
   }
 
-  values(opts = {}) {
-    const values = pick(this, ...[...this.schema.names()].filter(
-      name => {
-        if (!!opts.include && opts.include.indexOf(name) < 0) return false;
-        if (!!opts.exclude && opts.exclude.indexOf(name) >= 0) return false;
-
-        return true;
-      }
-    ));
-
-    return values;
-  }
-
   on(...argv) {
     if (!this.emitter) throw new Model.EmitterNotReady();
     return super.on(...argv);

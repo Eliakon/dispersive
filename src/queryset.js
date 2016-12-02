@@ -291,14 +291,11 @@ class QuerySet extends EventEmitter {
       : this.generator(mixedPrefilters);
 
     for (const entry of entries) {
-      if (!this.predicate || this.predicate(entry.schemaValues())) yield entry;
+      if (!this.predicate || this.predicate(entry.schemaValues())) {
+        entry.queryset = this;
+        yield entry;
+      }
     }
-  }
-
-  values(opts) {
-    const result = this.all().map(model => model.values(opts));
-
-    return result;
   }
 
   _range({start = 0, stop = Infinity, step = 1}) {
@@ -336,15 +333,53 @@ class QuerySet extends EventEmitter {
     return this;
   }
 
+  packRecompute(result, recompute, queryset = null) {
+    return [result, queryset || this, recompute];
+  }
+
+  each(func) {
+    for (const entry of this.entries()) {
+      func(entry);
+    }
+  }
+
+  map(func) {
+    const result = [];
+
+    this.each(entry => result.push(func(entry)));
+
+    return this.packRecompute(result, () => this.map(func));
+  }
+
+  valuesOf(...names) {
+    const result = [];
+
+    if (Array.isArray(names[0])) return this.valuesOf(...names[0]);
+
+    this.each(entry => {
+      const values = {};
+
+      if (names.length === 1) return result.push(entry[names[0]]);
+
+      for (const name of names) {
+        values[name] = entry[name];
+      }
+
+      result.push(values);
+    });
+
+    return this.packRecompute(result, () => this.valuesOf(...names));
+  }
+
   /**
    * List all results
    *
    * @return An array of models
    */
   all() {
-    const entries = [...this.entries()];
+    const result = [...this.entries()];
 
-    return {entries, queryset: this, recompute: () => this.all()};
+    return this.packRecompute(result, () => this.all());
   }
 
   /**
@@ -353,9 +388,9 @@ class QuerySet extends EventEmitter {
    * @return A model
    */
   first() {
-    const entry = this.entries().next().value;
+    const result = this.entries().next().value;
 
-    return {entry, queryset: this, recompute: () => this.first()};
+    return this.packRecompute(result, () => this.first());
   }
 
   /**
@@ -379,7 +414,7 @@ class QuerySet extends EventEmitter {
       throw new OutOfRange(index);
     }
 
-    return {entry: entry.value, queryset: this, recompute: () => this.at(index)};
+    return this.packRecompute(entry.value, () => this.at(index));
   }
 
   range(start = null, stop = null, step = 1) {
@@ -389,32 +424,36 @@ class QuerySet extends EventEmitter {
 
     const entries = !!config ? this._range(config) : this._range({start, stop, step});
 
-    return {entries, queryset: this, recompute: () => this.range(start, stop, step)};
+    return this.packRecompute(entries, () => this.range(start, stop, step));
   }
 
-
   last() {
-    const all = this.all();
-    const entry = all[all.length - 1];
+    let result = null;
 
-    return {entry, queryset: this, recompute: () => this.last()};
+    this.each(entry => {
+      result = entry;
+    });
+
+    return this.packRecompute(result, () => this.last());
   }
 
   count() {
     const count = this.all().length;
 
-    return {count, queryset: this, recompute: () => this.count()};
+    return this.packRecompute(count, () => this.count());
   }
 
   get(expression) {
-    const iterator = !!expression ? this.filter(expression).entries() : this.entries();
+    if (!!expression) return this.filter(expression).get();
+
+    const iterator = this.entries();
     const entry = iterator.next();
 
     if (entry.value === undefined) throw new DoesNotExist(expression);
     if (!iterator.next().done) throw new MoreThanOneValue(expression);
     if (!!QuerySet.recompute && !!entry.value) this.packRecompute(entry.value, 'get', expression);
 
-    return {entry: entry.value, queryset: this, recompute: () => this.get(expression)};
+    return this.packRecompute(entry.value, () => this.get());
   }
 
 }
